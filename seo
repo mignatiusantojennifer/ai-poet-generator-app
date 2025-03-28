@@ -1,0 +1,71 @@
+import sqlite3
+import whisper
+import faiss
+import numpy as np
+import chromadb
+from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from scipy.spatial.distance import cosine
+
+# Load models
+asr_model = whisper.load_model("base")
+bert_model = SentenceTransformer("all-MiniLM-L6-v2")
+tfidf_vectorizer = TfidfVectorizer()
+
+db = chromadb.Client()
+collection = db.get_or_create_collection("subtitles")
+
+# Connect to SQLite Database
+conn = sqlite3.connect("eng_subtitles_database.db")
+cursor = conn.cursor()
+
+# Load and process subtitles from the database
+def load_subtitles():
+    cursor.execute("SELECT num, name, content FROM zipfiles")
+    subtitles = []
+    for num, name, content in cursor.fetchall():
+        subtitle_text = content.decode('latin-1')
+        subtitles.append((num, name, subtitle_text.replace("\n", " ").strip()))
+    return subtitles
+
+# Function to generate embeddings
+def generate_embeddings(subtitles):
+    texts = [s[2] for s in subtitles]
+    bert_embeddings = bert_model.encode(texts)
+    tfidf_matrix = tfidf_vectorizer.fit_transform(texts)
+    return subtitles, bert_embeddings, tfidf_matrix
+
+# Store embeddings
+def store_embeddings(subtitles, embeddings):
+    for i, emb in enumerate(embeddings):
+        collection.add(emb, document=subtitles[i][2], metadata={"num": subtitles[i][0], "name": subtitles[i][1]})
+
+# Function to process audio query
+def audio_to_text(audio_path):
+    result = asr_model.transcribe(audio_path)
+    return result["text"]
+
+# Function to search subtitles
+def search_subtitles(query, top_k=5):
+    query_embedding = bert_model.encode([query])[0]
+    results = []
+    
+    for doc in collection.get_all():
+        doc_embedding = doc["embedding"]
+        score = 1 - cosine(query_embedding, doc_embedding)
+        results.append((doc["document"], doc["metadata"], score))
+    
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results[:top_k]
+
+# Load and process subtitles
+subtitles = load_subtitles()
+subtitles, bert_embeddings, tfidf_matrix = generate_embeddings(subtitles)
+store_embeddings(subtitles, bert_embeddings)
+
+# Example usage
+audio_query = "query_audio.wav"
+query_text = audio_to_text(audio_query)
+search_results = search_subtitles(query_text)
+for result in search_results:
+    print(f"Subtitle: {result[0]} | File Name: {result[1]['name']} | OpenSubtitles Link: https://www.opensubtitles.org/en/subtitles/{result[1]['num']}")

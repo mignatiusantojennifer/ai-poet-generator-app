@@ -1,0 +1,30 @@
+import openai
+from langchain.chat_models import ChatOpenAI
+from langchain.schema import SystemMessage, HumanMessage
+
+def review_code(code_snippet: str):
+    """
+    Reviews a given code snippet for best practices, security vulnerabilities, and performance issues.
+    """
+    model = ChatOpenAI(model_name="code review", openai_api_key="AIzaSyDvAJcT-nTowltjiLbZI73-n08gpTunYWo")
+
+    prompt = """
+    You are a highly skilled code reviewer. Analyze the following code snippet and provide feedback on:
+    - Best practices
+    - Security vulnerabilities
+    - Performance improvements
+    - Readability and maintainability
+    - Potential bugs
+    """
+
+    messages = [
+        SystemMessage(content="You are an expert software engineer and code reviewer."),
+        HumanMessage(content=prompt)
+    ]
+    
+    response = model(messages)
+    return response.content
+
+# Example usage
+if __name__ == "__main__":
+    print("Code Review Report:\n", review_code())
